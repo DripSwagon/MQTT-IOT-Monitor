@@ -13,8 +13,49 @@ struct Device {
     double timestamp;
 };
 
+
 struct Device devices[MAX_DEVICES];
 int device_count = 0;
+
+int find_device(const char *device_id)
+{
+    for (int i = 0; i < device_count; i++) {
+        if (strcmp(devices[i].device_id, device_id) == 0) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+int update_device(const char *device_id, double temperature, double humidity, double battery, double timestamp)
+{
+    int index = find_device(device_id);
+
+    if (index == -1) {
+        if (device_count >= MAX_DEVICES) {
+            printf("Maximum number of devices reached!\n");
+            return 0;
+        }
+
+        index = device_count;
+        device_count++;
+        
+		if (strlen(device_id) >= sizeof(devices[index].device_id)) {
+		    printf("Device ID is too long!\n");
+		    return 0;
+		}
+        strcpy(devices[index].device_id, device_id);
+    }
+
+    devices[index].temperature = temperature;
+    devices[index].humidity = humidity;
+    devices[index].battery = battery;
+    devices[index].timestamp = timestamp;
+
+    return 1;
+}
+
 
 void publish_alert(struct mosquitto *mq, const char *device_id,  const char *alert_type, double value, double timestamp)
 {
@@ -132,6 +173,14 @@ void message(struct mosquitto *mq, void *data, const struct mosquitto_message *m
     printf("Humidity: %.2f%%\n", humidity->valuedouble);
     printf("Battery: %.1f%%\n", battery->valuedouble);
     printf("Timestamp: %.0f\n", timestamp->valuedouble);
+
+    if(!update_device(device->valuestring,temperature->valuedouble,humidity->valuedouble,battery->valuedouble,timestamp->valuedouble))
+    {
+		printf("Failed to update device information!\n");
+		cJSON_Delete(json);
+		return;
+    	
+    }
 
 
 
