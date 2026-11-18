@@ -3,10 +3,81 @@
 #include <cjson/cJSON.h>
 #include <string.h>
 
-void message(struct mosquitto *mq, void *data,
-             const struct mosquitto_message *msg)
+#define MAX_DEVICES 100
+
+struct Device {
+    char device_id[64];
+    double temperature;
+    double humidity;
+    double battery;
+    double timestamp;
+};
+
+struct Device devices[MAX_DEVICES];
+int device_count = 0;
+
+void publish_alert(struct mosquitto *mq, const char *device_id,  const char *alert_type, double value, double timestamp)
 {
-    (void)mq;
+	cJSON *alert = cJSON_CreateObject();
+
+	if (alert == NULL) {
+	    printf("Failed to create cJSON alert!\n");
+		return;
+	}
+
+	if (cJSON_AddStringToObject(alert, "device_id", device_id) == NULL ||
+	cJSON_AddStringToObject(alert, "alert", alert_type) == NULL ||
+	cJSON_AddNumberToObject(alert, "value", value) == NULL ||
+	cJSON_AddNumberToObject(alert, "timestamp", timestamp) == NULL)
+	{
+		printf("Failed to add data to created alert JSON!");
+		cJSON_Delete(alert);
+		return;
+		
+	}
+
+
+	//Byte payload
+	char *payload = cJSON_PrintUnformatted(alert);
+
+	if (payload == NULL) {
+	    printf("Couldn't turn cJSON alert into byte payload!\n");
+	    cJSON_Delete(alert);
+		return;
+	}
+
+	char topic[128];
+	int byteswritten;
+	
+	byteswritten = snprintf(topic, sizeof(topic), "iot/devices/%s/alert", device_id);
+
+	if (byteswritten < 0 || (size_t)byteswritten >= sizeof(topic)) {
+		printf("Failed to append/create  topic!\n");
+		cJSON_Delete(alert);
+		cJSON_free(payload);
+		return;
+	}
+	
+	int pbl = mosquitto_publish(mq, NULL, topic, (int)strlen(payload), payload, 0, false);
+
+	if (pbl != MOSQ_ERR_SUCCESS){
+		printf("Alert publish failed, error: %s\n", mosquitto_strerror(pbl));
+	}
+	else {
+		printf("Alert was published successfully!\n");
+		
+	}
+	
+	cJSON_Delete(alert);
+	cJSON_free(payload);
+
+	return;
+}
+
+
+
+void message(struct mosquitto *mq, void *data, const struct mosquitto_message *msg)
+{
     (void)data;
 
     cJSON *json = cJSON_ParseWithLength((const char *)msg->payload, msg->payloadlen);
@@ -66,14 +137,17 @@ void message(struct mosquitto *mq, void *data,
 
 	if (temperature->valuedouble > 30) {
 	    printf("ALERT: HIGH_TEMPERATURE\n");
+	    publish_alert(mq, device->valuestring,"HIGH_TEMPERATURE", temperature->valuedouble, timestamp->valuedouble);
 	}
 	
 	if (humidity->valuedouble > 80) {
 	    printf("ALERT: HIGH_HUMIDITY\n");
+	    publish_alert(mq, device->valuestring,"HIGH_HUMIDITY", humidity->valuedouble, timestamp->valuedouble);
 	}
 	
 	if (battery->valuedouble < 20) {
 	    printf("ALERT: LOW_BATTERY\n");
+	    publish_alert(mq, device->valuestring,"LOW_BATTERY", battery->valuedouble, timestamp->valuedouble);
 	}
 	
     cJSON_Delete(json);
