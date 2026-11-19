@@ -98,10 +98,9 @@ python mqtt_simulator.py
 
 ## Alert Thresholds
 
-| Parameter | Condition | Alert |
-| Temperature | Above 30 °C | HIGH_TEMPERATURE |
-| Humidity | Above 80% | HIGH_HUMIDITY |
-| Battery | Below 20% | LOW_BATTERY |
+- `Temperature`:  Above 30 °C -> HIGH_TEMPERATURE
+- `Humidity`:  Above 80% -> HIGH_HUMIDITY
+- `Battery`:  Below 20% -> LOW_BATTERY
 
 ## Shutdown
 
