@@ -2,8 +2,20 @@
 #include <mosquitto.h>
 #include <cjson/cJSON.h>
 #include <string.h>
+#include <signal.h>
+#include <unistd.h>
 
 #define MAX_DEVICES 100
+
+volatile sig_atomic_t stop_requested = 0;
+
+void handle_sigint(int signum)
+{
+    (void)signum;
+    stop_requested = 1;
+}
+
+
 
 struct Device {
     char device_id[64];
@@ -37,14 +49,13 @@ int update_device(const char *device_id, double temperature, double humidity, do
             printf("Maximum number of devices reached!\n");
             return 0;
         }
-
-        index = device_count;
-        device_count++;
         
-		if (strlen(device_id) >= sizeof(devices[index].device_id)) {
+		if (strlen(device_id) >= sizeof(devices[0].device_id)) {
 		    printf("Device ID is too long!\n");
 		    return 0;
 		}
+		index = device_count;
+		device_count++;
         strcpy(devices[index].device_id, device_id);
     }
 
@@ -54,6 +65,23 @@ int update_device(const char *device_id, double temperature, double humidity, do
     devices[index].timestamp = timestamp;
 
     return 1;
+}
+
+
+void print_devices(void)
+{
+    printf("\n THERE ARE STORED DEVICES (%d) \n", device_count);
+
+    for (int i = 0; i < device_count; i++) {
+    	printf("--------------------------\n");
+        printf("Device: %s\n", devices[i].device_id);
+        printf("Temperature: %.2f C\n", devices[i].temperature);
+        printf("Humidity: %.2f%%\n", devices[i].humidity);
+        printf("Battery: %.1f%%\n", devices[i].battery);
+        printf("Timestamp: %.0f\n", devices[i].timestamp);
+        printf("--------------------------\n");
+    }
+    printf("\n---------THE END---------\n");
 }
 
 
@@ -144,7 +172,7 @@ void message(struct mosquitto *mq, void *data, const struct mosquitto_message *m
     }
 
    
-    if (strlen(device->valuestring) == 0) {
+    if (device->valuestring == NULL || strlen(device->valuestring) == 0) {
         printf("Invalid device ID!\n");
         cJSON_Delete(json);
         return;
@@ -182,6 +210,8 @@ void message(struct mosquitto *mq, void *data, const struct mosquitto_message *m
     	
     }
 
+    print_devices();
+
 
 
 	if (temperature->valuedouble > 30) {
@@ -203,11 +233,52 @@ void message(struct mosquitto *mq, void *data, const struct mosquitto_message *m
 }
 
 
+
+void connect_callback(struct mosquitto *mq, void *data, int rc)
+{
+    (void)data;
+
+    if (rc == 0) {
+        printf("Successfully connected to MQTT broker!\n");
+        int result = mosquitto_subscribe(mq, NULL, "iot/devices/+/telemetry",0);
+        
+        if (result != MOSQ_ERR_SUCCESS)
+        {
+        	printf("Could not subscribe after reconnecting: %s\n", mosquitto_strerror(result));
+        }
+        else { printf("Connected subscription!\n"); }
+        
+    } 
+
+    else 
+    {
+        printf("Connection failed: %s\n", mosquitto_connack_string(rc));
+    }
+}
+
+
+void disconnect_callback(struct mosquitto *mq, void *data, int rc)
+{
+    (void)mq;
+    (void)data;
+
+    if (rc == 0) {
+        printf("Disconnected from MQTT broker normally.\n");
+    } else {
+        printf("Unexpected disconnection: %s\n", mosquitto_strerror(rc));
+    }
+}
+
+
 int main(void){
 
 	struct mosquitto *mq;
 
 	printf("Starting MQTT IoT Device Monitor\n");
+
+	signal(SIGINT, handle_sigint);
+
+	
 
 	int rc = mosquitto_lib_init();
 
@@ -227,12 +298,14 @@ int main(void){
 
 
 	mosquitto_message_callback_set(mq, message);
+	mosquitto_connect_callback_set(mq, connect_callback);
+	mosquitto_disconnect_callback_set(mq, disconnect_callback);
 
 
 	int cn = mosquitto_connect(mq, "localhost", 1883, 60);
 	
 	if (cn != MOSQ_ERR_SUCCESS){
-		printf("Failed to connect the client from application to MQTT");
+		printf("Failed to connect the client from application to MQTT\n");
 		printf("Reason: %s\n", mosquitto_strerror(cn));
 		mosquitto_destroy(mq);
 		mosquitto_lib_cleanup();
@@ -240,23 +313,28 @@ int main(void){
 		
 	}
 
-	int sb = mosquitto_subscribe(mq, NULL, "iot/devices/+/telemetry",0);
-	if (sb != MOSQ_ERR_SUCCESS){
-		printf("Failed to subscribe to the topic");
-		mosquitto_destroy(mq);
-		mosquitto_lib_cleanup();
-		return 1;
-			
+
+	rc = mosquitto_loop_start(mq);
+	
+	if (rc != MOSQ_ERR_SUCCESS) {
+	    printf("Failed to start MQTT thread: %s\n", mosquitto_strerror(rc));
+	    mosquitto_destroy(mq);
+	    mosquitto_lib_cleanup();
+	    return 1;
 	}
 
+	while (!stop_requested) {
+	    sleep(1);
+	}
 
-	rc = mosquitto_loop_forever(mq,-1,1);
-
-	printf("Loop stopped: %s\n", mosquitto_strerror(rc));
+	printf("Shutting down application, please wait...\n");
 
 	mosquitto_disconnect(mq);
+	mosquitto_loop_stop(mq,false);
 	mosquitto_destroy(mq);
 	mosquitto_lib_cleanup();
+
+	printf("Shutdown successful\n");
 	
 	return 0;
 	
