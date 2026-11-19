@@ -105,3 +105,38 @@ python mqtt_simulator.py
 ## Shutdown
 
 Press `Ctrl+C` to stop the application gracefully.
+
+## Testing
+
+The application should be tested under the following conditions:
+
+1. **MQTT Connection:** Start the application while the Mosquitto broker is running and verify that it connects successfully.
+2. **Multiple Devices:** Run the Python simulator and verify that telemetry from multiple devices is received and processed.
+3. **High Temperature:** Verify that a `HIGH_TEMPERATURE` alert is generated when temperature exceeds 30 °C.
+4. **High Humidity:** Verify that a `HIGH_HUMIDITY` alert is generated when humidity exceeds 80%.
+5. **Low Battery:** Verify that a `LOW_BATTERY` alert is generated when battery falls below 20%.
+6. **Malformed JSON:** Send an invalid JSON message and verify that the application handles it without crashing.
+7. **Reconnection:** Stop the Mosquitto broker while the application is running, restart it, and verify that the application reconnects.
+8. **Graceful Shutdown:** Press `Ctrl+C` and verify that the application shuts down cleanly.
+
+## Test Results
+
+| Test | Result |
+|---|---|
+| MQTT connection | Successful |
+| Multiple devices | Successful |
+| High temperature alert | Successful |
+| High humidity alert | Successful |
+| Low battery alert | Successful |
+| Malformed JSON handling | Successful |
+| Broker reconnection | Successful |
+| Graceful shutdown | Successful |
+
+## Known Limitations
+
+- **Fixed alert thresholds:** Temperature, humidity, and battery thresholds are predefined in the source code.
+- **Limited device capacity:** The application can track a maximum of 100 devices.
+- **In-memory device storage:** Device information is stored in memory and is lost when the application shuts down.
+- **No offline device detection:** The application does not currently detect when an individual IoT device stops sending telemetry.
+- **No persistent alert history:** Alerts are published to MQTT, but the application does not maintain a separate permanent alert history.
+- **Basic logging:** Output can be written to a file, but currently only logs alerts.
