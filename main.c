@@ -4,10 +4,12 @@
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #define MAX_DEVICES 100
 
 volatile sig_atomic_t stop_requested = 0;
+FILE *log_file = NULL;
 
 void handle_sigint(int signum)
 {
@@ -84,6 +86,17 @@ void print_devices(void)
     printf("\n---------THE END---------\n");
 }
 
+
+void log_message(const char *message)
+{
+    printf("%s", message);
+
+    if (log_file != NULL)
+    {
+        fprintf(log_file, "%s", message);
+        fflush(log_file);
+    }
+}
 
 void publish_alert(struct mosquitto *mq, const char *device_id,  const char *alert_type, double value, double timestamp)
 {
@@ -215,17 +228,17 @@ void message(struct mosquitto *mq, void *data, const struct mosquitto_message *m
 
 
 	if (temperature->valuedouble > 30) {
-	    printf("ALERT: HIGH_TEMPERATURE\n");
+	    log_message("ALERT: HIGH_TEMPERATURE\n");
 	    publish_alert(mq, device->valuestring,"HIGH_TEMPERATURE", temperature->valuedouble, timestamp->valuedouble);
 	}
 	
 	if (humidity->valuedouble > 80) {
-	    printf("ALERT: HIGH_HUMIDITY\n");
+	    log_message("ALERT: HIGH_HUMIDITY\n");
 	    publish_alert(mq, device->valuestring,"HIGH_HUMIDITY", humidity->valuedouble, timestamp->valuedouble);
 	}
 	
 	if (battery->valuedouble < 20) {
-	    printf("ALERT: LOW_BATTERY\n");
+	    log_message("ALERT: LOW_BATTERY\n");
 	    publish_alert(mq, device->valuestring,"LOW_BATTERY", battery->valuedouble, timestamp->valuedouble);
 	}
 	
@@ -269,10 +282,73 @@ void disconnect_callback(struct mosquitto *mq, void *data, int rc)
     }
 }
 
+int main(int argc, char *argv[]){
 
-int main(void){
-
+	char *host = "localhost";
+	int port = 1883;
+	char *output_file = NULL;
+	
 	struct mosquitto *mq;
+
+	for (int i = 1; i < argc; i++)
+	{
+        if (strcmp(argv[i], "-H") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                printf("Missing host after -H!\n");
+                return 1;
+            }
+        
+            host = argv[++i];
+        }
+        
+        else if (strcmp(argv[i], "-P") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                printf("Missing port after -P!\n");
+                return 1;
+            }
+        
+            port = atoi(argv[++i]);
+        
+            if (port < 1 || port > 65535)
+            {
+                printf("Invalid port!\n");
+                return 1;
+            }
+        }
+
+        else if (strcmp(argv[i], "-o") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                printf("Missing filename after -o!\n");
+                return 1;
+            }
+        
+            output_file = argv[++i];
+        }
+        
+        else if (strcmp(argv[i], "-h") == 0)
+        {
+            printf("Usage: ./iot_monitor [-H HOST] [-P PORT] [-h]\n");
+            return 0;
+        }
+	}
+
+
+	if (output_file != NULL)
+	{
+	    log_file = fopen(output_file, "a");
+
+	    if (log_file == NULL)
+	    {
+	        perror("Could not open log file");
+	        return 1;
+	    }
+	}
 
 	printf("Starting MQTT IoT Device Monitor\n");
 
@@ -302,18 +378,6 @@ int main(void){
 	mosquitto_disconnect_callback_set(mq, disconnect_callback);
 
 
-	int cn = mosquitto_connect(mq, "localhost", 1883, 60);
-	
-	if (cn != MOSQ_ERR_SUCCESS){
-		printf("Failed to connect the client from application to MQTT\n");
-		printf("Reason: %s\n", mosquitto_strerror(cn));
-		mosquitto_destroy(mq);
-		mosquitto_lib_cleanup();
-		return 1;
-		
-	}
-
-
 	rc = mosquitto_loop_start(mq);
 	
 	if (rc != MOSQ_ERR_SUCCESS) {
@@ -321,6 +385,17 @@ int main(void){
 	    mosquitto_destroy(mq);
 	    mosquitto_lib_cleanup();
 	    return 1;
+	}
+
+	int cn = mosquitto_connect_async(mq, host, port, 60);
+	
+	if (cn != MOSQ_ERR_SUCCESS){
+		printf("Failed to initialize connection between the client to MQTT\n");
+		printf("Reason: %s\n", mosquitto_strerror(cn));
+		mosquitto_destroy(mq);
+		mosquitto_lib_cleanup();
+		return 1;
+		
 	}
 
 	while (!stop_requested) {
@@ -333,6 +408,11 @@ int main(void){
 	mosquitto_loop_stop(mq,false);
 	mosquitto_destroy(mq);
 	mosquitto_lib_cleanup();
+
+	if (log_file != NULL)
+	{
+	    fclose(log_file);
+	}
 
 	printf("Shutdown successful\n");
 	
