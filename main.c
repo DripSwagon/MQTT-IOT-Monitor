@@ -72,7 +72,7 @@ int update_device(const char *device_id, double temperature, double humidity, do
 
 void print_devices(void)
 {
-    printf("\n THERE ARE STORED DEVICES (%d) \n", device_count);
+    printf("[]-THERE ARE STORED DEVICES (%d)-[] \n", device_count);
 
     for (int i = 0; i < device_count; i++) {
     	printf("--------------------------\n");
@@ -83,7 +83,7 @@ void print_devices(void)
         printf("Timestamp: %.0f\n", devices[i].timestamp);
         printf("--------------------------\n");
     }
-    printf("\n---------THE END---------\n");
+    printf("[]-------THE END--------[]\n");
 }
 
 
@@ -223,9 +223,6 @@ void message(struct mosquitto *mq, void *data, const struct mosquitto_message *m
     	
     }
 
-    print_devices();
-
-
 
 	if (temperature->valuedouble > 30) {
 	    log_message("ALERT: HIGH_TEMPERATURE\n");
@@ -241,6 +238,10 @@ void message(struct mosquitto *mq, void *data, const struct mosquitto_message *m
 	    log_message("ALERT: LOW_BATTERY\n");
 	    publish_alert(mq, device->valuestring,"LOW_BATTERY", battery->valuedouble, timestamp->valuedouble);
 	}
+
+
+	print_devices();
+	
 	
     cJSON_Delete(json);
 }
